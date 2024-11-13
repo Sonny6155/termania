@@ -1,0 +1,6 @@
+# Using conda+pip on python 3.12.7
+just_playback  # Tiny thread-safe audio player for game sync
+msdparser  # Simplify SM/SCC parsing
+numpy  # For pre-rendering canvas
+pynput  # Access key up without sudo
+
