@@ -1,5 +1,12 @@
 # termania
-Stepmania, but in the terminal
+A highly portable version of DDR/Stepmania for Mac/Unix terminals to play on the go.
+
+### Supported features
+- Tap, hold, roll, and mine notes
+- Semi-compliant SM file format parser
+- Dynamic BPM changes (XMod)
+- Negative BPMs/stops (as defined by SM)
+- Adjustable scroll factor (aka beat spacing, thus apparent speed)
 
 ## Installation & Usage
 In the project directory:
@@ -16,28 +23,24 @@ If the chart doesn't load, ensure that the "#MUSIC" tag in the SM file uses the 
 - Backspace: Exit program
 - D, F, J, K: Default 4K key mappings
 
-## About
-The goal of this project is to build a highly portable version of DDR/Stepmania for Mac/Unix terminals to play on the go.
-
-### Supported features
-- Hold, roll, and mine notes
-- SM file format
-- Dynamic BPM changes (XMod)
-- Negative BPMs/stops (as defined by SM)
-- Adjustable scroll factor (aka beat spacing, thus apparent speed)
-
 ## Technical Notes
 ### Design considerations
 Graphics is purely text-based, since sixel is unsupported on the default terminal for Mac and GNOME.
 For the same reason, colour space should be 8-bit and should only use ASCII for consistent width/support.
-Libraries should be kept minimal so that it is lightweight, easily rewritable for another language/application if needed, and as a learning experience.
+
 Python is fine because the Mac terminal refresh rate is the far greater bottleneck.
+But the libraries should be kept minimal so that it is lightweight, easily rewritable for another language/application if needed, and as a learning experience.
+As such:
+- just_playback was used as a tiny audio engine for syncing all threads. Surprisingly well-supported at time of writing.
+- pynput was used to overcome the limitations of a terminal's stdin.
+- msdparser greatly simplifies MSD format parsing for SM, SSC and DWI.
 
 Finally, it needs to be able to parse existing Stepmania charts into the internal format (at bare minimum, SM format, but eventually SSC and SSQ) to be realistically practical.
 
 ### Notable limitations
 The vertical axis is the traditional, most intuitive play direction and also the easiest to draw in curses.
 However, it is also the worst axis for gameplay because rendered chars are usually taller than wide, causing the illusion of flickering.
+So while the original V^3 gimmick map works, it's not particularly recommended.
 One option is to render thicker notes and increase the note spacing/speed to improve the illusion of steady note movement,
 but the limited vertical resolution means this can only go so far (without a tall monitor or smaller char cell).
 
@@ -60,6 +63,9 @@ The official SM wiki for spec, plus the wiki of other parser projects:
 Docs or interface source for utilised libraries:
 - https://msdparser.readthedocs.io/en/latest/
 - https://github.com/cheofusi/just_playback
+
+### Tools
+Vim (purely for learning), miniconda+pip, Desmos, Figma, Toggl
 
 ## Backlog (might move to Issues)
 Todo:
@@ -85,7 +91,12 @@ Todo:
 - Custom format and its parser
   - Should allow true negative BPM as backrolling charts
 - Variable-width notes and note skins
+  - Probably requires a "canvas" buffer before cropped write
 - Hitsounds/claps/explosions
+- Live rewind/seek/loop section
+- Live slow/pitch
+  - Requires swapping out just_playback with unthreaded lib or raw
+  - May need to custom handle time-stretch algorithm?
 - Document theory more thoroughly, but maybe out of repo
 - Move out name-main test cases into pytest
 
