@@ -27,7 +27,7 @@ class GameField:
             for column in note_columns
         ]
 
-        # Scoring stuff
+        # Track user performance
         self.__judgement_counts = {
             Judgement.MARVELOUS: 0,
             Judgement.PERFECT: 0,
@@ -38,12 +38,11 @@ class GameField:
             Judgement.OK: 0,
             Judgement.NG: 0,
         }
-
         self.__last_judgement = None
-        # TODO: May consider a "last_judgement_time" for renderer to decay visual?
-
-        # NOTE: Wont do DP scoring just yet (will probably require some injected callback magic)
-        # Might also wanna keep a list of last hits for more powerful user feedback?
+        self.__nps_avg = 0
+        self.__accuracy_avg = 0
+        self.__last_song_time = 0
+        # Don't bother with real-time graphs. Leave that to post-game
 
     # Game event handlers (may be triggered by user input or game polling)
     # Notes handle their own statefulness (e.g. hold decay) and when/how to score
@@ -76,16 +75,17 @@ class GameField:
                     self.__note_cursors[key_index] += 1
 
     def poll(self, song_time: float, held: list[bool]) -> bool:
-        # Trigger an update on head notes, scoring any done notes
+        # Trigger a regular game update
         # Also returns if chart is fully complete
         with self.__game_lock:
             chart_complete = True
 
-            for i in range(len(self.__note_columns)):
+            # First, trigger an update on head notes, handling any scoring
+            for col_i, column in enumerate(self.__note_columns):
                 checking_column = True
-                while checking_column and self.__note_cursors[i] < len(self.__note_columns[i]):
-                    note = self.__note_columns[i][self.__note_cursors[i]]
-                    judgement = note.poll(song_time, held[i])
+                while checking_column and self.__note_cursors[col_i] < len(column):
+                    note = column[self.__note_cursors[col_i]]
+                    judgement = note.poll(song_time, held[col_i])
                     chart_complete = False
 
                     if judgement is None:
@@ -95,13 +95,35 @@ class GameField:
                         # Update scoreboard and check next
                         self.__judgement_counts[judgement] += 1
                         self.__last_judgement = judgement
-                        self.__note_cursors[i] += 1
+                        self.__note_cursors[col_i] += 1
+
+            # Then, update useful, real-time game states
+            accuracy_sum = 0
+            note_count = 0
+            for col_i, column in enumerate(self.__note_columns):
+                note_i = min(self.__note_cursors[col_i], len(column))
+
+                # Search the previous 5s of (applicable) notes
+                while note_i >= 0 and (song_time - 5) < column[note_i].timing:
+                    accuracy = column[note_i].accuracy
+                    if accuracy is not None:
+                        accuracy_sum += accuracy
+                        note_count += 1
+                    note_i -= 1
+
+            if note_count > 0:
+                # Compute windowed cumulative avgs
+                self.__nps_avg = note_count / 5
+                self.__accuracy_avg = accuracy_sum / (note_count * 5)
+            else:
+                self.__nps_avg = 0
+                self.__accuracy_avg = 0
 
             return chart_complete
 
-    def get_game_state(self) -> tuple[dict[Judgement, int], Judgement | None]:
+    def get_metrics(self) -> tuple[dict[Judgement, int], Judgement | None, float, float]:
         # Take a snapshot of the current game state for rendering
         # Currently just the summary info, because post-game analysis uses notes themselves
         with self.__game_lock:
-            return self.__judgement_counts.copy(), self.__last_judgement
+            return self.__judgement_counts.copy(), self.__last_judgement, self.__nps_avg, self.__accuracy_avg
 
