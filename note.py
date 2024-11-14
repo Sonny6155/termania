@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from judgement import Judgement
 
 
-# Notes will store their own judged state (though gamefield probably store runtime dupe info)
+# Notes will store their own judged state (though gamefield handles runtime metrics etc)
 # This allows post-game analysis, as well as various rendering decisions
 # Though these enums might be atomic and infrequently access, mutex just in case
 
@@ -13,11 +13,10 @@ from judgement import Judgement
 
 class Note(ABC):
     # Interface for all note types
-    # Helps decoupling, since most use cases only need their logical info like timing/positioning
-    # Measure info is not currently required, but might be useful later
-    # However, rendering needs to inspect the exact type, now that notes no longer handle their own rendering details
+    # Helps decoupling (except for rendering etc, which must peek type/details)
 
     # Instant events
+    # Accuracy can be set at anytime, but judgement indicates note completion
     @abstractmethod
     def press(self, song_time: float) -> Judgement | None:
         pass
@@ -32,10 +31,7 @@ class Note(ABC):
     @abstractmethod
     def poll(self, song_time: float, held: bool) -> Judgement | None:
         # Triggered each game tick
-        # Used where exact press/release events are insufficient to model behaviour
-
-        # held is only relevant if available
-        # Raw terminals can't tell if keys are held, falling back to press checks
+        # Used for stuff like hold decay or miss detection, etc
         pass
 
     # Immutable properties
@@ -48,7 +44,6 @@ class Note(ABC):
     @property
     @abstractmethod
     def timing(self) -> float:
-        # TODO: might not actually need this if working with respect to SM?
         # True timing in seconds, relative to the song
         pass
 
@@ -82,7 +77,7 @@ class Note(ABC):
 
     @property
     @abstractmethod
-    def hit_timing(self) -> float | None:
+    def accuracy(self) -> float | None:
         # Mutexed judged timing of the head note relative to the song
         # -ve is early, +ve is late, 0 is exact, None is inapplicable or miss
         pass
@@ -105,16 +100,16 @@ class TapNote(Note):
 
         # Stateful info
         self.__judgement = None
-        self.__hit_timing = None
+        self.__accuracy = None
         self.__lock = threading.Lock()
 
     def press(self, song_time: float) -> Judgement | None:
         # For now, hardcode the timing windows to match SM Judge 4
         # Won't return scoring info etc yet, because that gets complex
         # TODO: May want to return exact delta time, because that can be helpful in review
-        abs_delta_time = abs(song_time - self.__timing)
         with self.__lock:
-            self.__hit_timing = abs_delta_time
+            abs_delta_time = abs(song_time - self.__timing)
+            self.__accuracy = (song_time - self.__timing)
             if abs_delta_time <= 0.0225:
                 self.__judgement = Judgement.MARVELOUS
             elif abs_delta_time <= 0.045:
@@ -126,9 +121,10 @@ class TapNote(Note):
             elif abs_delta_time <= 0.18:
                 self.__judgement = Judgement.BOO
             elif song_time > self.__timing:
-                self.__hit_timing = None
+                self.__accuracy = None
                 self.__judgement = Judgement.MISS  # >180ms
-            # No action if -180ms
+            else:
+                self.__accuracy = None  # No action if -180ms
 
             return self.__judgement
 
@@ -170,9 +166,9 @@ class TapNote(Note):
             return self.__judgement
 
     @property
-    def hit_timing(self) -> float | None:
+    def accuracy(self) -> float | None:
         with self.__lock:
-            return self.__hit_timing
+            return self.__accuracy
 
 
 class HoldNote(Note):
@@ -203,7 +199,7 @@ class HoldNote(Note):
         # Stateful info
         self.__last_held = -1  # Tracks hold decay
         self.__judgement = None
-        self.__hit_timing = None
+        self.__accuracy = None
         self.__lock = threading.Lock()
 
         # Derivable states (assuming unscored):
@@ -215,8 +211,11 @@ class HoldNote(Note):
         # Assume context checks/knows if it is already dropped/scored
         # NOTE: For ANSI version, we probably want to check that the key isn't already being held
         # so maybe guard the <-300ms zone?
-        if (song_time - self.__timing) >= -0.18:
-            with self.__lock:
+        with self.__lock:
+            delta_time = (song_time - self.__timing)
+            if delta_time >= -0.18:
+                if self.__accuracy is None:
+                    self.__accuracy = delta_time
                 self.__last_held = song_time
 
     def release(self, song_time: float) -> Judgement | None:
@@ -295,9 +294,9 @@ class HoldNote(Note):
             return self.__judgement
 
     @property
-    def hit_timing(self) -> float | None:
+    def accuracy(self) -> float | None:
         with self.__lock:
-            return self.__hit_timing
+            return self.__accuracy
 
 
 class RollNote(Note):
@@ -328,7 +327,7 @@ class RollNote(Note):
         # Stateful info
         self.__last_held = -1  # Tracks hold decay
         self.__judgement = None
-        self.__hit_timing = None
+        self.__accuracy = None
         self.__lock = threading.Lock()
 
         # Similar to holds, but "held" decay only resets on press
@@ -339,8 +338,11 @@ class RollNote(Note):
         # Assume context checks/knows if it is already dropped/scored
         # NOTE: For ANSI version, we probably want to check that the key isn't already being held
         # so maybe guard the <-300ms zone?
-        if (song_time - self.__timing) >= -0.18:
-            with self.__lock:
+        with self.__lock:
+            delta_time = (song_time - self.__timing)
+            if delta_time >= -0.18:
+                if self.__accuracy is None:
+                    self.__accuracy = delta_time
                 self.__last_held = song_time
 
     def release(self, song_time: float) -> Judgement | None:
@@ -414,9 +416,9 @@ class RollNote(Note):
             return self.__judgement
 
     @property
-    def hit_timing(self) -> float | None:
+    def accuracy(self) -> float | None:
         with self.__lock:
-            return self.__hit_timing
+            return self.__accuracy
 
 
 class MineNote(Note):
@@ -436,7 +438,7 @@ class MineNote(Note):
 
         # Stateful info
         self.__judgement = None
-        self.__hit_timing = None
+        self.__accuracy = None
         self.__lock = threading.Lock()
 
     def press(self, song_time: float) -> Judgement | None:
@@ -487,7 +489,7 @@ class MineNote(Note):
             return self.__judgement
 
     @property
-    def hit_timing(self) -> float | None:
+    def accuracy(self) -> float | None:
         with self.__lock:
-            return self.__hit_timing
+            return self.__accuracy
 

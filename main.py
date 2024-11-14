@@ -245,7 +245,7 @@ def render(
                 stdscr.erase()  # Presumably an optimised but maybe imperfect clear?
 
                 # Grab latest game states (other than notes)
-                judgement_counts, last_judgement = game_field.get_game_state()  # TODO: Will render summary counts later
+                judgement_counts, last_judgement, nps, accuracy = game_field.get_metrics()  # TODO: Will render summary counts later
                 song_time = playback.curr_pos + offset if playback.active else offset
 
                 # Calculate frame-specific vars
@@ -261,6 +261,21 @@ def render(
                 stdscr.addstr(hit_line_y, 0, "-" * c)
                 
                 # NOTE: Assuming upscroll, 5 char width columns, no col spacing
+
+                # Render HUD (11x20)
+                # TODO: Move to right of game
+                # TODO: Colour?
+                stdscr.addnstr(10, 40, f"MARVELOUS: {judgement_counts[Judgement.MARVELOUS]}", 20)
+                stdscr.addnstr(11, 40, f"  PERFECT: {judgement_counts[Judgement.PERFECT]}", 20)
+                stdscr.addnstr(12, 40, f"    GREAT: {judgement_counts[Judgement.GREAT]}", 20)
+                stdscr.addnstr(13, 40, f"     GOOD: {judgement_counts[Judgement.GOOD]}", 20)
+                stdscr.addnstr(14, 40, f"      BOO: {judgement_counts[Judgement.BOO]}", 20)
+                stdscr.addnstr(15, 40, f"     MISS: {judgement_counts[Judgement.MISS]}", 20)
+                stdscr.addnstr(16, 40, f"       OK: {judgement_counts[Judgement.OK]}", 20)
+                stdscr.addnstr(17, 40, f"       NG: {judgement_counts[Judgement.NG]}", 20)
+
+                stdscr.addnstr(19, 40, f"      NPS: {nps}", 20)
+                stdscr.addnstr(20, 40, f" Accuracy: {accuracy*1000:.2f}ms", 20)
 
                 # Render measure/beat lines
                 i = 0
@@ -292,8 +307,6 @@ def render(
                         note_y = -round(spacing * (song_beat - note.beat)) + hit_line_y
                         note_judgement = note.judgement  # Snapshot
 
-                        stdscr.addstr(12, 40, f"{last_judgement}"[10:])
-                        
                         # Note hasn't arrived yet, so column is fully rendered
                         if note_y >= r-1:
                             on_screen = False
@@ -395,6 +408,10 @@ def render(
                     # Otherwise there might still be more notes offscreen, so do nothing
                         
                 # End rendering all note columns
+
+                # Render recent judgement
+                # Per tradition, render over game area
+                stdscr.addnstr(10, 5, f"{last_judgement}"[10:].center(10), 20)
 
                 # TODO: Once we implement complex note skins, move to this buffered array approach
                 # Paint to a temporary canvas to minimise bounds checking before every write
@@ -521,12 +538,16 @@ if __name__ == "__main__":
             keep_running.state = False
             game_thread.join()
             listener.stop()
+            curses.flushinp()
             raise
             
 
         # Teardown (indirectly triggered by keep_running flag)
         game_thread.join()
         listener.stop()
+        curses.flushinp()
+
+        # Errors in listener seems to be hard to handle safely?
 
         # TODO: I assume then it would continue to block input for a moment (somehow)
         # to inform user of game end, then redirect to home to dump results?
