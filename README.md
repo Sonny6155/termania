@@ -6,13 +6,23 @@ A highly portable version of DDR/Stepmania for Mac/Unix terminals to play on the
 - Semi-compliant SM file format parser
 - Dynamic BPM changes (XMod)
 - Negative BPMs/stops (as defined by SM)
-- Adjustable scroll factor (aka beat spacing, thus apparent speed)
+- Minimal HUD
+- Various configs
+  - Scroll factor (aka relative spacing, thus "speed")
+  - Key mappings for n-K charts
+  - Offset
 
 ## Installation & Usage
 In the project directory:
 ```
 pip install -r requirements.txt
-python main.py <path_to_song_folder> [<scroll_factor>]
+python main.py --help
+```
+
+Examples:
+```
+python main.py "songs/V^3 (Hello World)" --scroll 0.75
+python main.py songs/Cloudless 1 --scroll 2 --keys "zxcv" --offset -0.002
 ```
 
 You may need to enable input permissions during usage.
@@ -31,7 +41,7 @@ For the same reason, colour space should be 8-bit and should only use ASCII for 
 Python is fine because the Mac terminal refresh rate is the far greater bottleneck.
 But the libraries should be kept minimal so that it is lightweight, easily rewritable for another language/application if needed, and as a learning experience.
 As such:
-- just_playback was used as a tiny audio engine for syncing all threads. Surprisingly well-supported at time of writing.
+- just\_playback was used as a tiny audio engine for syncing all threads. Surprisingly well-supported at time of writing.
 - pynput was used to overcome the limitations of a terminal's stdin.
 - msdparser greatly simplifies MSD format parsing for SM, SSC and DWI.
 
@@ -62,23 +72,13 @@ The official SM wiki for spec, plus the wiki of other parser projects:
 
 Docs or interface source for utilised libraries:
 - https://msdparser.readthedocs.io/en/latest/
-- https://github.com/cheofusi/just_playback
+- https://github.com/cheofusi/just\_playback
 
 ### Tools
 Vim (purely for learning), miniconda+pip, Desmos, Figma, Toggl
 
 ## Backlog (might move to Issues)
 Todo:
-- Extra CLI kwargs
-  - Select specific chart index within song pack
-  - Custom n-K key mapping
-  - Possibly global input offset
-  - Possibly disable some rendered features
-- Stats/score HUD
-  - Rolling or exponential accuracy ms display
-  - NPS display
-  - Simple graph for accuracy/NPS over time
-  - Running judgement scoreboard
 - Centering of game display, loading/results screens, etc
 - Colours
   - Notes should be coloured by their measure fraction and judgement state
@@ -93,9 +93,10 @@ Todo:
 - Variable-width notes and note skins
   - Probably requires a "canvas" buffer before cropped write
 - Hitsounds/claps/explosions
+- Fade out audio exit for graceful end
 - Live rewind/seek/loop section
 - Live slow/pitch
-  - Requires swapping out just_playback with unthreaded lib or raw
+  - Requires swapping out just\_playback with unthreaded lib or raw
   - May need to custom handle time-stretch algorithm?
 - Document theory more thoroughly, but maybe out of repo
 - Move out name-main test cases into pytest
