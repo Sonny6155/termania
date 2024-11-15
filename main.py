@@ -1,3 +1,4 @@
+import argparse
 import curses
 import math
 import os
@@ -13,11 +14,6 @@ from game_field import GameField
 from judgement import Judgement
 from note import Note, TapNote, HoldNote, RollNote, MineNote  # Renderer needs to break encapsulation
 from sm_reader import SMReader
-
-
-# Launches the threads and
-# This variant uses pynput to capture hold/release for a slightly better
-# mine/hold experience
 
 
 class Flag:
@@ -66,13 +62,12 @@ class GameKeys:
 
 
 # Event handlers (wrapped to avoid globals)
-# This should also detach input from game state polling rate for precise scoring?
-# TODO: If these block input for too long (unlikely) make it call an unawaited async task instead
+# Being event driven, these are much more precise than our regular game ticks
 def init_on_press(
     keep_running: Flag,
     playback: Playback,
     offset: float,
-    game_field: GameField,  # Thread-safe game obj
+    game_field: GameField,
     game_keys: GameKeys,
 ):  # TODO: typehint callable
     def on_press(key) -> None:
@@ -94,23 +89,31 @@ def init_on_press(
                 else:
                     playback.resume()
 
-        # On game key (ignoring autorepeats), trigger note handlers
-        elif playback.playing and hasattr(key, "char") and game_keys.char_exists(key.char):
-            key_index = game_keys.index_of(key.char)
-            if not game_keys.is_held(key_index):
-                game_keys.press(key_index)
+        # On game key, trigger note handlers
+        elif playback.playing:
+            ch = None
+            if hasattr(key, "char"):
+                ch = key.char
+            elif key == pynput.keyboard.Key.space:
+                # Accept space, which is commonly used for odd key charts
+                ch = " "
+                
+            if ch is not None and game_keys.char_exists(ch):
+                key_index = game_keys.index_of(ch)
+                if not game_keys.is_held(key_index):  # Filter autorepeat
+                    game_keys.press(key_index)
 
-                # Pass press event to game obj
-                song_time = playback.curr_pos + offset if playback.active else offset
-                game_field.press_key(key_index, song_time)
-
+                    # Pass press event to game obj
+                    song_time = playback.curr_pos + offset if playback.active else offset
+                    game_field.press_key(key_index, song_time)
+        
     return on_press
 
 
 def init_on_release(
     playback: Playback,
     offset: float, 
-    game_field: GameField,  # Thread-safe game obj
+    game_field: GameField,
     game_keys: GameKeys,
 ):
     def on_release(key) -> None:
@@ -119,14 +122,21 @@ def init_on_release(
         nonlocal game_field
         nonlocal game_keys
 
-        # Reallow key press events on previously held
-        if playback.playing and hasattr(key, "char") and game_keys.char_exists(key.char):
-            key_index = game_keys.index_of(key.char)
-            game_keys.release(key_index)
+        # Reallow key press events if previously held
+        if playback.playing:
+            ch = None
+            if hasattr(key, "char"):
+                ch = key.char
+            elif key == pynput.keyboard.Key.space:
+                ch = " "
 
-            # Pass release event to game obj
-            song_time = playback.curr_pos + offset if playback.active else offset
-            game_field.release_key(key_index, song_time)
+            if ch is not None and game_keys.char_exists(ch):
+                key_index = game_keys.index_of(ch)
+                game_keys.release(key_index)
+
+                # Pass release event to game obj
+                song_time = playback.curr_pos + offset if playback.active else offset
+                game_field.release_key(key_index, song_time)
 
     return on_release
 
@@ -159,7 +169,7 @@ def game_logic(
     keep_running.state = False
 
 
-# This is actually handled by main to ensure safe shutdown
+# This is run on main thread to ensure safe shutdown on KeyboardInterrupt
 def render(
     keep_running: Flag,
     playback: Playback,
@@ -172,7 +182,6 @@ def render(
     min_tick_rate: float = 1.0/120.0,  # Some terminals are frame capped, so 60-120hz maybe
 ):
     # Handles all stdout writing
-    # Technically, this is not the ideal orientation for stutterless terminal writing (without sixels)...
 
     # NOTE:
     # - game_field and raw notes (not the lists view) are live objs, so don't mutate
@@ -211,10 +220,6 @@ def render(
     hit_line_y = 4  # Offset from screen edge
     spacing = 8 * scroll  # Tuned to create a 8 char beat spacing at scroll 1
     # Due to the limited resolution of a (vertical) terminal, I would not suggest <8 per full beat
-
-    # NOTE: No plans yet to implement dynamic scroll factor
-    # Though, it would look like this in frame loop:
-    #spacing = 8 * scroll_lines.scroll_at_time(song_time)
     
     # TODO: Set up colours
     # grey for dropped/missed holds
@@ -413,6 +418,9 @@ def render(
                 # Per tradition, render over game area
                 stdscr.addnstr(10, 5, f"{last_judgement}"[10:].center(10), 20)
 
+                if playback.active and not playback.playing:
+                    stdscr.addstr(11, 7, "PAUSED")
+
                 # TODO: Once we implement complex note skins, move to this buffered array approach
                 # Paint to a temporary canvas to minimise bounds checking before every write
                 # To be on the safe side, reserve the last col for newline char
@@ -422,7 +430,6 @@ def render(
                 # np nd-slicing makes cropping marginally easier than list[str] and pasting much easier
 
                 # Finally, crop to terminal
-                # try needed because interruptable, skipping frame update
 
                 stdscr.move(r-1, c-1)
                 stdscr.refresh()
@@ -449,107 +456,150 @@ def render(
         raise
 
 
+def parse_argv() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "path",
+        type=str,
+        help="Path to chart folder"
+    )  # Positionals are inherently required
+    parser.add_argument(
+        "index",
+        type=int,
+        nargs="?",
+        default=0,
+        help="nth note data in the chart file to read",
+    )
+    parser.add_argument(
+        "--scroll",
+        type=float,
+        default=1.0,
+        help="Multiplier affecting note spacing and apparent speed",
+    )
+    parser.add_argument(
+        "--keys",
+        type=str.lower,
+        default="dfjk",
+        help="Key mapping, as an ordered string of letters/space",
+    )
+    parser.add_argument(
+        "--offset",
+        type=float,
+        default=0.0,
+        help="Adds extra song delay (in seconds)",
+    )
+    args = parser.parse_args()
+
+    # Extra arg validation
+    if not all(x.isalpha() or x.isspace() for x in args.keys):
+        raise ValueError("Key mapping must only contain ASCII letters or space.")
+
+    return args
+
+
 if __name__ == "__main__":
-    if not 2 <= len(sys.argv) <= 3:
-        print("Expected 1-2 args, got {len(sys.argv) - 1}.")
-        print("Format: <script> <song_dir> [scroll_factor]")
-        # TODO: Probably want to name these later via argparse
-    else:
-        # Parse file
-        chart_dir = sys.argv[1]
-        all_files = [
-            f
-            for f in os.listdir(chart_dir)
-            if os.path.isfile(os.path.join(chart_dir, f)) and f.endswith(".sm")
-        ]
-        if len(all_files) != 1:
-            raise FileNotFoundError("Found 0 or 2+ SM files. Note that SCC is not yet supported.")
+    # Parse positionals/kwargs from sys.argv
+    args = parse_argv()  # May early exit on validation errors
 
-        file_path = os.path.join(chart_dir, all_files[0])
+    # Parse file
+    chart_dir = args.path
+    all_files = [
+        f
+        for f in os.listdir(chart_dir)
+        if os.path.isfile(os.path.join(chart_dir, f)) and f.endswith(".sm")
+    ]
+    if len(all_files) != 1:
+        raise FileNotFoundError("Found 0 or 2+ SM files. Note that SCC is not yet supported.")
 
-        # Parse scroll factor (if available)
-        scroll = float(sys.argv[2]) if len(sys.argv) == 3 else 1  # May ValueError
+    file_path = os.path.join(chart_dir, all_files[0])
 
-        # Setup up read-only data
-        reader = SMReader()
-        bps_lines = reader.read_bps_lines(file_path)
-        note_columns = reader.read_notes(file_path, 0, bps_lines)
-        music_file = os.path.join(chart_dir, reader.read_music_path(file_path))
-        offset = reader.read_offset(file_path)
+    # Setup up read-only data
+    reader = SMReader()
+    bps_lines = reader.read_bps_lines(file_path)
+    note_columns = reader.read_notes(file_path, args.index, bps_lines)
+    music_file = os.path.join(chart_dir, reader.read_music_path(file_path))
+    offset = reader.read_offset(file_path) + args.offset
 
-        # TODO: allow nk depending on what mappings are found in config (or passed in?)
-        if len(note_columns) != 4:
-            raise ValueError("Only 4K is currently supported.")
+    # TODO: allow nk depending on what mappings are found in config (or passed in?)
+    if len(note_columns) != len(args.keys):
+        raise ValueError(f"Key mapping mismatch. Chart uses {len(note_columns)} keys, but given keys have {len(args.keys)}.")
 
-        # NOTE: Will not support keysounds atm
+    # NOTE: Will not support keysounds atm
 
-        # Set up thread-safe objs used for coordinating game state
-        keep_running = Flag(True)  # Signaller for safe thread teardown
-        playback = Playback(music_file)  # Audio engine (time sync, pausing, etc)
-        game_field = GameField(note_columns)  # Manages in-progress game scoring
-        game_keys = GameKeys(["d", "f", "j", "k"])  # Various key state management
-        # TODO: Presumably, key mapping gets generated from config based on note_columns size or on load later?
+    # Set up thread-safe objs used for coordinating game state
+    keep_running = Flag(True)  # Signaller for safe thread teardown
+    playback = Playback(music_file)  # Audio engine (time sync, pausing, etc)
+    game_field = GameField(note_columns)  # Manages in-progress game scoring
+    game_keys = GameKeys(list(args.keys))  # Various key state management
 
-        try:
-            # Set up threaded input listeners
-            listener = pynput.keyboard.Listener(
-                on_press=init_on_press(
-                    keep_running,
-                    playback,
-                    offset,
-                    game_field,
-                    game_keys,
-                ),
-                on_release=init_on_release(
-                    playback,
-                    offset,
-                    game_field,
-                    game_keys
-                ),
-            )
-            listener.start()
-
-            # Set up game thread
-            game_thread = threading.Thread(target=game_logic, args=(
+    try:
+        # Set up threaded input listeners
+        listener = pynput.keyboard.Listener(
+            on_press=init_on_press(
                 keep_running,
                 playback,
                 offset,
                 game_field,
                 game_keys,
-            ))
-            game_thread.start()
-
-            # Run render on main thread, so we can shutdown safely
-            render(
-                keep_running,
+            ),
+            on_release=init_on_release(
                 playback,
                 offset,
                 game_field,
-                bps_lines,
-                note_columns,
-                scroll=scroll,
-            )
-        except KeyboardInterrupt:
-            # Seems that SIGKILL hits the main thread first, hence catching fails in other threads?
-            keep_running.state = False
-        except:
-            # For crashes in hefty render routine, try close other threads gracefully before returning error
-            # Well, try anyways
-            keep_running.state = False
-            game_thread.join()
-            listener.stop()
-            curses.flushinp()
-            raise
-            
+                game_keys
+            ),
+        )
+        listener.start()
 
-        # Teardown (indirectly triggered by keep_running flag)
+        # Set up game thread
+        game_thread = threading.Thread(target=game_logic, args=(
+            keep_running,
+            playback,
+            offset,
+            game_field,
+            game_keys,
+        ))
+        game_thread.start()
+
+        # Run render on main thread, so we can shutdown safely
+        render(
+            keep_running,
+            playback,
+            offset,
+            game_field,
+            bps_lines,
+            note_columns,
+            scroll=args.scroll,
+        )
+    except KeyboardInterrupt:
+        # Seems that Ctrl+C hits the main thread first, hence catching fails in other threads?
+        keep_running.state = False
+    except:
+        # For crashes in hefty render routine, try close other threads gracefully before returning error
+        # Well, try anyways
+        keep_running.state = False
         game_thread.join()
         listener.stop()
         curses.flushinp()
+        raise
+        
 
-        # Errors in listener seems to be hard to handle safely?
+    # Teardown (indirectly triggered by keep_running flag)
+    game_thread.join()
+    listener.stop()
+    curses.flushinp()
 
-        # TODO: I assume then it would continue to block input for a moment (somehow)
-        # to inform user of game end, then redirect to home to dump results?
-        # May have to do this in render thread, which means converting Flag into a multi valued end state?
+    # Errors in listener seems to be hard to handle safely?
+
+    # TODO: I assume then it would continue to block input for a moment (somehow)
+    # to inform user of game end, then redirect to home to dump results?
+    # May have to do this in render thread, which means converting Flag into a multi valued end state?
+
+    # Temporary solution: Dump to main screen
+    print("Results:")
+    for k, v in game_field.get_metrics()[0].items():
+        # Works fine since python dicts are ordered
+        print(f"{k}: {v}")
 
