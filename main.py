@@ -220,10 +220,6 @@ def render(
     hit_line_y = 4  # Offset from screen edge
     spacing = 8 * scroll  # Tuned to create a 8 char beat spacing at scroll 1
     # Due to the limited resolution of a (vertical) terminal, I would not suggest <8 per full beat
-
-    # NOTE: No plans yet to implement dynamic scroll factor
-    # Though, it would look like this in frame loop:
-    #spacing = 8 * scroll_lines.scroll_at_time(song_time)
     
     # TODO: Set up colours
     # grey for dropped/missed holds
