@@ -101,7 +101,7 @@ class GameField:
             accuracy_sum = 0
             note_count = 0
             for col_i, column in enumerate(self.__note_columns):
-                note_i = min(self.__note_cursors[col_i], len(column))
+                note_i = min(self.__note_cursors[col_i], len(column)-1)
 
                 # Search the previous 5s of (applicable) notes
                 while note_i >= 0 and (song_time - 5) < column[note_i].timing:
