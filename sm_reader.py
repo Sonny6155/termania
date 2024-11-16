@@ -1,4 +1,4 @@
-#import math
+import math
 
 from msdparser import parse_msd, MSDParameter
 
@@ -135,9 +135,28 @@ class SMReader:
                         if held_params[key_i] is None:
                             raise ValueError(f"Detected hold/roll end when none started on key {key_i}.")
 
+                        # FIX: Edge case where tail can be inf with valid head (try use some earlier time)
+                        head_time = held_params[key_i][2]
+                        if math.isinf(head_time):
+                            # Match tail by also setting to inf
+                            tail_time = float("inf")
+                        elif math.isinf(row_time):
+                            # Try find a valid time, else instant end
+                            tail_time, _ = bps_lines.time_at_beat(
+                                row_beat,
+                                bps_line_cursor,
+                                allow_stop=True,
+                                allow_warp=True,
+                            )
+                            if math.isinf(tail_time):
+                                tail_time = head_time
+                        else:
+                            # All is fine, no fix required
+                            tail_time = row_time
+
                         note_columns[key_i].append(held_params[key_i][0](
                             *held_params[key_i][1:],
-                            row_time,
+                            tail_time,
                             row_beat,
                             row_i,
                             len(measure),
@@ -180,7 +199,8 @@ class SMReader:
 
 if __name__ == "__main__":
     # Read from real file with stops
-    file_path = "Cloudless/Cloudless.sm"
+    #file_path = "songs/Cloudless/Cloudless.sm"
+    file_path = "songs/V^3 (Hello World)/V^3 (Hello World).sm"
     reader = SMReader()
     bps_lines = reader.read_bps_lines(file_path)
     note_columns = reader.read_notes(file_path, 0, bps_lines)
@@ -189,7 +209,7 @@ if __name__ == "__main__":
     for col, notes in enumerate(note_columns):
         print(f"Col {col}:")
         for note in notes:
-            print(f"t: {note.timing:.2f}, b: {note.beat:.2f}, measure_frac: {note.measure_fraction}, type: {type(note)}{', duration: ' + str(note.tail_timing - note.timing) if isinstance(note, HoldNote) else ''}")
+            print(f"t: {note.timing:.2f}, b: {note.beat:.2f}, measure_frac: {note.measure_fraction}, type: {type(note)}{', tail_timing: ' + str(note.tail_timing) + ', duration: ' + str(note.tail_timing - note.timing) if isinstance(note, HoldNote) else ''}")
 
         #    print(f"{note.timing:.2f}")
         #for note in notes:
