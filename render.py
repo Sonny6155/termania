@@ -262,8 +262,9 @@ def render(
     else:
         render_columns = [
             sorted(
-                (x for x in column if not math.isinf(x.timing)
-            ), key=lambda x: x.timing)
+                (x for x in column if not math.isinf(x.timing)),
+                key=lambda x: x.timing,
+            )
             for column in note_columns
         ]
 

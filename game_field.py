@@ -1,3 +1,4 @@
+import math
 import threading
 
 from judgement import Judgement
@@ -23,7 +24,10 @@ class GameField:
         # Clone, sort, and drop unhittable notes
         # We only clone the view, so that notes remain direct refs
         self.__note_columns = [
-            sorted(column, key=lambda x: x.timing)
+            sorted(
+                (x for x in column if not math.isinf(x.timing)),
+                key=lambda x: x.timing,
+            )
             for column in note_columns
         ]
 
