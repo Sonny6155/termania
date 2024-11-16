@@ -158,8 +158,6 @@ def game_logic(
     keep_running.state = False
 
 
-
-
 def parse_argv() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -177,10 +175,16 @@ def parse_argv() -> argparse.Namespace:
         help="nth note data in the chart file to read",
     )
     parser.add_argument(
+        "--cmod",
+        dest="xmod",
+        action="store_false",
+        help="Switches to constant time rendering (ignores speed changes)"
+    )
+    parser.add_argument(
         "--scroll",
         type=float,
         default=1.0,
-        help="Multiplier affecting note spacing and apparent speed",
+        help="Multiplier affecting note spacing and thus speed",
     )
     parser.add_argument(
         "--keys",
@@ -226,7 +230,6 @@ if __name__ == "__main__":
     music_file = os.path.join(chart_dir, reader.read_music_path(file_path))
     offset = reader.read_offset(file_path) + args.offset
 
-    # TODO: allow nk depending on what mappings are found in config (or passed in?)
     if len(note_columns) != len(args.keys):
         raise ValueError(f"Key mapping mismatch. Chart uses {len(note_columns)} keys, but given keys have {len(args.keys)}.")
 
@@ -275,6 +278,7 @@ if __name__ == "__main__":
             game_field,
             bps_lines,
             note_columns,
+            xmod=args.xmod,
             scroll=args.scroll,
         )
     except KeyboardInterrupt:

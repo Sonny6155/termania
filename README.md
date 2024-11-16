@@ -5,10 +5,11 @@ A highly portable version of DDR/Stepmania for Mac/Unix terminals to play on the
 - Tap, hold, roll, and mine notes
 - Semi-compliant SM file format parser
 - Dynamic BPM changes (XMod)
+- Constant speed rendering (CMod)
 - Negative BPMs/stops (as defined by SM)
 - Minimal HUD
 - Various configs
-  - Scroll factor (aka relative spacing, thus "speed")
+  - Scroll factor (aka note speed)
   - Key mappings for n-K charts
   - Offset
 
@@ -23,6 +24,7 @@ Examples:
 ```
 python main.py "songs/V^3 (Hello World)" --scroll 0.75
 python main.py songs/Cloudless 1 --scroll 2 --keys "zxcv" --offset -0.002
+python main.py songs/Cloudless 1 --scroll 4.6667 --cmod
 ```
 
 You may need to enable input permissions during usage.
@@ -56,7 +58,7 @@ but the limited vertical resolution means this can only go so far (without a tal
 
 The limited resolution also means highly dense charts may not render quite as well on low scroll factors, as scroll=1 will round 16th+ notes to the same row while 12th-ish notes rely more on rhythm than visuals.
 
-There is no easy way to change the actual note speed in XMod without affecting spacing, due to the beat-relative position formula. Current solutions are adjusting the scroll factor, modifying the chart BPMs, or maybe injecting the vel factor to a custom format reader at load time.
+Due to y rounding, CMod may look jittery if the exact correct BPS is not used for scroll speed, where XMod would render at constant spacing for integer scrolls. For a constant 140 BPM song, scroll 2 on XMod equals 4.6667 on CMod (aka 140 / 60). Short of checking the file itself, the next best fix is simply to play at a sufficiently fast BPM.
 
 ## Resources Used
 A Hackaday blog post proposing a graph solution. No code given, but re-implemented the concept into an avg O(1) lookup:
@@ -84,14 +86,11 @@ Todo:
   - Notes should be coloured by their measure fraction and judgement state
   - Measure lines can be made a less intrusive colour
   - Judgement colour scheme (maybe emulate DDR colours or by early/lateness)
-- Constant speed via time-based rendering (CMod)
 - SSC format parser
   - Must support WARP
   - Both SM/SSC should parse the less common aliases
 - Custom format and its parser
   - Should allow true negative BPM as backrolling charts
-- Variable-width notes and note skins
-  - Probably requires a "canvas" buffer before cropped write
 - Hitsounds/claps/explosions
 - Fade out audio exit for graceful end
 - Live rewind/seek/loop section
@@ -112,3 +111,6 @@ Won't do (any time soon):
   - Best left to a separate repo
 - Chart search/navigator
   - Best left to a separate repo
+- Arrow heads and note skins
+  - Without a better framework for it, this is too difficult to implement well
+  - Not to mention, the limited vertical resolution means it usually doesn't fit nicely
