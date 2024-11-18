@@ -243,11 +243,8 @@ def render(
     min_tick_rate: float = 1.0/120.0,  # Some terminals are frame capped, so 60-120hz maybe
 ):
     # Handles all stdout writing
-
-    # NOTE: Do not mutate game_field, raw notes,. Some of these are purposely unthreaded.
-    # We will be break encapsulation a bit to analyse notes for detailed rendering
-
-    # if cmod, call the cmod variant of beat lines render and note formula, but reuse the rest
+    # NOTE: Do not mutate game_field, raw notes, or bps_lines from here
+    # We will also break encapsulation a bit to analyse notes for detailed rendering
 
     # First, clone and sort our local notes view
     # In xmod, we always reflect chart order when rendering, rather than true hit time
@@ -273,7 +270,10 @@ def render(
     bps_cursor = 0  # BPS lookups are also forward-only
     # As seen later, we only need to render notes until off-screen, hence tiny window
 
-    # Other static vars
+    # Static values for the game session
+    # NOTE: Assuming upscroll, 5 char width columns, no col spacing on game panel
+    game_width = len(render_columns) * 5  # Used for dynamic positioning
+    hud_width = 20  # Known BB
     hit_line_y = 4  # Offset from screen edge
     spacing = 8 * scroll  # Tuned to create a 8 char beat spacing at scroll 1
     # NOTE: CMod results in 8 chars per second at scroll 1, simulating 60BPM
@@ -295,9 +295,8 @@ def render(
         curses.noecho()  # Prevent stdin affecting console
         #stdscr.nodelay(True)  # Non-blocking stdin on getch()  # NOTE: Will only use in ANSI version
         stdscr.keypad(True)  # Consume arrows to prevent weird behaviours
-        #print("\x1b[?7l")  # Disable line wrap (truncates)  # TODO: check if this even works for curses
 
-        # TODO: Ensure all threads are fully loaded before starting
+        # TODO: All threads are typically ready in time, though we might want to add a short delay to warn of game start?
         stdscr.addstr(0, 0, "loading")
         stdscr.refresh()
         event = threading.Event()
@@ -321,35 +320,46 @@ def render(
                     allow_warp=True,
                 )
                 r, c = stdscr.getmaxyx()
-                # game_offset_x = int((c - (len(render_columns) * 5)) // 2)  # TODO: centering stuff
-                # hud_offset_x = (c - game_offset_x) + int(len(render_columns) * 5 // 2)
-
-                # NOTE: Assuming upscroll, 5 char width columns, no col spacing
 
                 # Split out patch building, but assemble and finalise draw here
                 # This simplifies toggling features, transparency, position/constraints, etc
                 # As a side effect, the interface is clearer and uses way less nesting
 
-                # NOTE: Subwindows is too janky to be reliable atm, and panels still throws out of bounds
-                # Hence we are handling it manually like this
+                # NOTE: Curses subwindows are too janky to be reliable atm, and panels can still curses.error
+                # Hence will handle panels manually
 
-                # Render HUD (enforce 11x20 BB and 10,40 offset)
-                # TODO: Move to right of game
+                # Calculate offsets for panel layout
+                if c > game_width + (hud_width * 2):
+                    # Try center game area, then center HUD in right gap
+                    game_offset_x = int((c-1 - game_width) // 2)
+                    hud_offset_x = game_offset_x + game_width + int((game_offset_x - hud_width) // 2)
+                elif c > game_width + hud_width:
+                    # Otherwise, try with game justified left
+                    game_offset_x = 0
+                    hud_offset_x = int((c-1 + game_width - hud_width) // 2)
+                else:
+                    # No space, so hide the HUD via sentinel
+                    # Frame just drops if the game itself can't fit
+                    game_offset_x = 0
+                    hud_offset_x = None
+
+                # Render HUD (fixed y offset)
                 # TODO: Colour?
-                hud_data = build_hud(judgement_counts, nps, accuracy)
-                for text_y, text_x, text, text_attr in hud_data[:11]:
-                    stdscr.addnstr(10 + text_y, 40 + text_x, text, 20, text_attr)
+                if hud_offset_x is not None:
+                    hud_data = build_hud(judgement_counts, nps, accuracy)
+                    for text_y, text_x, text, text_attr in hud_data:
+                        if r > 10 + text_y:
+                            stdscr.addnstr(10 + text_y, hud_offset_x + text_x, text, hud_width, text_attr)
                 
-                # Render game underlay (offset later)
+                # Render game underlay
                 if xmod:
                     field_data = build_field_xmod(len(render_columns), hit_line_y, r-1, spacing, song_beat)
                 else:
                     field_data = build_field_cmod(bps_cursor, bps_lines, len(render_columns), hit_line_y, r-1, spacing, song_beat, song_time)
                 for text_y, text_x, text, text_attr in field_data:
-                    # TODO: Center game area
-                    stdscr.addstr(text_y, text_x, text, text_attr)
+                    stdscr.addstr(text_y, game_offset_x + text_x, text, text_attr)
 
-                # Render all on-screen notes (offset later)
+                # Render all on-screen notes
                 if xmod:
                     # Inject closures to avoid ~100 lines of duplication
                     note_data = build_notes(
@@ -370,15 +380,16 @@ def render(
                         song_time
                     )
                 for text_y, text_x, text, text_attr in note_data:
-                    stdscr.addstr(text_y, text_x, text, text_attr)
+                    stdscr.addstr(text_y, game_offset_x + text_x, text, text_attr)
 
                 # Render overlay (judgement and pause state)
                 # Per tradition, render over game area
-                game_mid = int(len(render_columns) * 5 // 2)  # + game_offset_x
-                text = str(last_judgement)[10:]  # Exploit enum form
-                stdscr.addstr(10, max(0, game_mid - int(len(text) // 2)), text)
+                game_mid = int(game_width // 2) + game_offset_x
+                if r > 10:
+                    text = str(last_judgement)[10:]  # Exploit enum form
+                    stdscr.addstr(10, max(0, game_mid - int(len(text) // 2)), text)
 
-                if playback.active and not playback.playing:
+                if r > 11 and playback.active and not playback.playing:
                     stdscr.addstr(11, max(0, game_mid - 3), "PAUSED")
 
                 stdscr.move(r-1, c-1)
@@ -388,6 +399,7 @@ def render(
                 # Window overflow due to user resize or tiny window
                 try:
                     stdscr.addstr(0, 0, "Frame dropped:\nResizing or window too small")
+                    stdscr.refresh()
                 except curses.error:
                     # Too small to even write that? Give up and loop
                     pass
