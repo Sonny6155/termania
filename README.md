@@ -12,6 +12,7 @@ A highly portable version of DDR/Stepmania for Mac/Unix terminals to play on the
   - Scroll factor (aka note speed)
   - Key mappings for n-K charts
   - Offset
+- Colour mode (in DDR/Stepmania style)
 
 ## Installation & Usage
 In the project directory:
@@ -24,11 +25,15 @@ Examples:
 ```
 python main.py "songs/V^3 (Hello World)" --scroll 0.75
 python main.py songs/Cloudless 1 --scroll 2 --keys "zxcv" --offset -0.002
-python main.py songs/Cloudless 1 --scroll 4.6667 --cmod
+python main.py songs/Cloudless 1 --scroll 4.6667 --cmod --colour
 ```
 
 You may need to enable input permissions during usage.
 If the chart doesn't load, ensure that the "#MUSIC" tag in the SM file uses the correct music filename/path.
+Colour support may vary between terminals. On MacOS, make sure to enable the bright colours (or some elements may disappear or dim):
+```
+Settings > Profiles > Text > Enable "Use bright colors for bold text"
+```
 
 ### Controls
 - Esc: Toggle pause
@@ -38,7 +43,7 @@ If the chart doesn't load, ensure that the "#MUSIC" tag in the SM file uses the 
 ## Technical Notes
 ### Design considerations
 Graphics is purely text-based, since sixel is unsupported on the default terminal for Mac and GNOME.
-For the same reason, colour space should be 8-bit and should only use ASCII for consistent width/support.
+For the same reason, colour space should be 4-bit and should only use ASCII chars for consistent width/support.
 
 Python is fine because the Mac terminal refresh rate is the far greater bottleneck.
 But the libraries should be kept minimal so that it is lightweight, easily rewritable for another language/application if needed, and as a learning experience.
@@ -59,6 +64,10 @@ but the limited vertical resolution means this can only go so far (without a tal
 The limited resolution also means highly dense charts may not render quite as well on low scroll factors, as scroll=1 will round 16th+ notes to the same row while 12th-ish notes rely more on rhythm than visuals.
 
 Due to y rounding, CMod may look jittery if the exact correct BPS is not used for scroll speed, where XMod would render at constant spacing for integer scrolls. For a constant 140 BPM song, scroll 2 on XMod equals 4.6667 on CMod (aka 140 / 60). Short of checking the file itself, the next best fix is simply to play at a sufficiently fast BPM.
+
+Most terminals can support at least 4-bit (ANSI) colours, but some may require manually enabling the bright palette for the standard 8 colours.
+Additionally, the actual colour values may still vary signficantly between each terminal.
+Due to the complexity of implementing colours in any form, there are no plans to support 16-bit (xterm-256color) or 24-bit colours at this time.
 
 ## Resources Used
 A Hackaday blog post proposing a graph solution. No code given, but re-implemented the concept into an avg O(1) lookup:
@@ -81,10 +90,6 @@ Vim (purely for learning), miniconda+pip, Desmos, Figma, Toggl
 
 ## Backlog (might move to Issues)
 Todo:
-- Colours
-  - Notes should be coloured by their measure fraction and judgement state
-  - Measure lines can be made a less intrusive colour
-  - Judgement colour scheme (maybe emulate DDR colours or by early/lateness)
 - SSC format parser
   - Must support WARP
   - Both SM/SSC should parse the less common aliases

@@ -181,6 +181,12 @@ def parse_argv() -> argparse.Namespace:
         help="Switches to constant time rendering (ignores speed changes)"
     )
     parser.add_argument(
+        "--colour",
+        dest="colour_support",
+        action="store_true",
+        help="Switches to 4-bit colour mode (works on most terminals, with the correct config)"
+    )
+    parser.add_argument(
         "--scroll",
         type=float,
         default=1.0,
@@ -233,8 +239,6 @@ if __name__ == "__main__":
     if len(note_columns) != len(args.keys):
         raise ValueError(f"Key mapping mismatch. Chart uses {len(note_columns)} keys, but given keys have {len(args.keys)}.")
 
-    # NOTE: Will not support keysounds atm
-
     # Set up thread-safe objs used for coordinating game state
     keep_running = Flag(True)  # Signaller for safe thread teardown
     playback = Playback(music_file)  # Audio engine (time sync, pausing, etc)
@@ -280,6 +284,7 @@ if __name__ == "__main__":
             note_columns,
             xmod=args.xmod,
             scroll=args.scroll,
+            colour_support=args.colour_support,
         )
     except KeyboardInterrupt:
         # Seems that Ctrl+C hits the main thread first, hence catching fails in other threads?

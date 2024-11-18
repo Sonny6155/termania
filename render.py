@@ -11,27 +11,29 @@ from judgement import Judgement
 from note import Note, TapNote, HoldNote, RollNote, MineNote  # Renderer needs to break encapsulation
 
 
-# Each build func returns the y, x, text, attr (int 0 == no attr, per 2s-compl bitfield)
+# Each build func returns the y, x, text, attr (bitfield, where 0 = no attr)
 
 
 def build_hud(
     judgement_counts: dict[Judgement, int],
     nps: float,
     accuracy: float,
+    hud_colour: int,
+    judgement_colours: dict[Judgement, int],
 ) -> list[tuple[int, int, str, int]]:
     # Returns draw data for the side HUD
     return [
-        (0, 0, f"MARVELOUS: {judgement_counts[Judgement.MARVELOUS]}", 0),
-        (1, 2, f"PERFECT: {judgement_counts[Judgement.PERFECT]}", 0),
-        (2, 4, f"GREAT: {judgement_counts[Judgement.GREAT]}", 0),
-        (3, 5, f"GOOD: {judgement_counts[Judgement.GOOD]}", 0),
-        (4, 6, f"BOO: {judgement_counts[Judgement.BOO]}", 0),
-        (5, 5, f"MISS: {judgement_counts[Judgement.MISS]}", 0),
-        (6, 7, f"OK: {judgement_counts[Judgement.OK]}", 0),
-        (7, 7, f"NG: {judgement_counts[Judgement.NG]}", 0),
+        (0, 0, f"MARVELOUS: {judgement_counts[Judgement.MARVELOUS]}", judgement_colours[Judgement.MARVELOUS]),
+        (1, 2, f"PERFECT: {judgement_counts[Judgement.PERFECT]}", judgement_colours[Judgement.PERFECT]),
+        (2, 4, f"GREAT: {judgement_counts[Judgement.GREAT]}", judgement_colours[Judgement.GREAT]),
+        (3, 5, f"GOOD: {judgement_counts[Judgement.GOOD]}", judgement_colours[Judgement.GOOD]),
+        (4, 6, f"BOO: {judgement_counts[Judgement.BOO]}", judgement_colours[Judgement.BOO]),
+        (5, 5, f"MISS: {judgement_counts[Judgement.MISS]}", judgement_colours[Judgement.MISS]),
+        (6, 7, f"OK: {judgement_counts[Judgement.OK]}", judgement_colours[Judgement.OK]),
+        (7, 7, f"NG: {judgement_counts[Judgement.NG]}", judgement_colours[Judgement.NG]),
 
-        (9, 6, f"NPS: {nps}", 0),
-        (10, 1, f" Accuracy: {accuracy*1000:.2f}ms", 0),
+        (9, 6, f"NPS: {nps}", hud_colour),
+        (10, 1, f"Accuracy: {accuracy*1000:.2f}ms", hud_colour),
     ]
 
 
@@ -41,6 +43,7 @@ def build_field_xmod(
     max_y: int,
     spacing: float,
     song_beat: float,
+    colours: tuple[int, int],
 ) -> list[tuple[int, int, str, int]]:
     # Returns draw data for the hit line and measure lines
     patches = []
@@ -52,14 +55,14 @@ def build_field_xmod(
     line_y = round(spacing * beat_offset) + hit_line_y
     while line_y < max_y:
         if i % 4 == strong_beat:
-            patches.append((line_y, 0, "-----" * col_count, 0))
+            patches.append((line_y, 0, "-----" * col_count, colours[0]))
         else:
-            patches.append((line_y, 0, "  -  " * col_count, 0))
+            patches.append((line_y, 0, "  -  " * col_count, colours[1]))
         i += 1
         line_y = round(spacing * (beat_offset + i)) + hit_line_y
 
     # Render hit line in front, regardless of rounding
-    patches.append((hit_line_y, 0, "-----" * col_count, 0))
+    patches.append((hit_line_y, 0, "-----" * col_count, colours[0]))
 
     return patches
 
@@ -73,6 +76,7 @@ def build_field_cmod(
     spacing: float,
     song_beat: float,
     song_time: float,
+    colours: tuple[int, int],
 ) -> list[tuple[int, int, str, int]]:
     # Returns draw data for the hit line and measure lines
     patches = []
@@ -88,9 +92,9 @@ def build_field_cmod(
     line_y = float("inf") if math.isinf(line_time) else -round(spacing * (song_time - line_time)) + hit_line_y
     while line_y < max_y:
         if i % 4 == 0:
-            patches.append((line_y, 0, "-----" * col_count, 0))
+            patches.append((line_y, 0, "-----" * col_count, colours[0]))
         else:
-            patches.append((line_y, 0, "  -  " * col_count, 0))
+            patches.append((line_y, 0, "  -  " * col_count, colours[1]))
         i += 1
         line_time, _ = bps_lines.time_at_beat(
             i,
@@ -101,7 +105,7 @@ def build_field_cmod(
         line_y = float("inf") if math.isinf(line_time) else -round(spacing * (song_time - line_time)) + hit_line_y
 
     # Render hit line above
-    patches.append((hit_line_y, 0, "-----" * col_count, 0))
+    patches.append((hit_line_y, 0, "-----" * col_count, colours[0]))
 
     return patches
 
@@ -113,9 +117,10 @@ def build_notes(
     render_columns: list[list[Note]],
     render_cursors: list[int],
     song_time: float,
+    colours: tuple[int, int, int, int, int],
 ) -> list[tuple[int, int, str, int]]:
     # Returns the draw data for notes
-    # The closures are a lazy way of swapping out pos funcs for x/cmod. You may blame past me...
+    # The closures are a lazy way of swapping out pos funcs for x/cmod
     # Mutates render_cursors
 
     patches = []
@@ -131,6 +136,17 @@ def build_notes(
             note = column[note_i]
             note_y = head_y_func(note)
             note_judgement = note.judgement  # Snapshot
+
+            # Colour palette roughly based on DDR's NOTE system
+            if abs(note.measure_pos % (note.measure_fraction / 4)) <= 0.01:
+                note_colour = colours[0]
+            elif abs(note.measure_pos % (note.measure_fraction / 8)) <= 0.01:
+                note_colour = colours[1]
+            elif abs(note.measure_pos % (note.measure_fraction / 16)) <= 0.01:
+                note_colour = colours[2]
+            else:
+                note_colour = colours[3]
+            # Reserve 5th colour for hold/roll/special notes
 
             # Note hasn't arrived yet, so column is fully rendered
             if note_y >= max_y:
@@ -157,15 +173,15 @@ def build_notes(
                         note_str = " | "
 
                     while body_i < max_tail_y:
-                        patches.append((body_i, note_x + 1, note_str, 0))
+                        patches.append((body_i, note_x + 1, note_str, note_colour))
                         body_i += 1
 
-                    # Then render the head and body if on screen
+                    # Then render the head and tail if on screen
                     if max_tail_y == tail_y:
-                        patches.append((max_tail_y, note_x, "[===]", 0))
+                        patches.append((max_tail_y, note_x, "[===]", note_colour))
 
                     if note_y >= 0:
-                        patches.append((note_y, note_x, "[===]", 0))
+                        patches.append((note_y, note_x, "[===]", note_colour))
 
             elif isinstance(note, RollNote):
                 tail_y = tail_pos_func
@@ -186,15 +202,15 @@ def build_notes(
                         note_str = " W "
 
                     while body_i < max_tail_y:
-                        patches.append((body_i, note_x + 1, note_str, 0))
+                        patches.append((body_i, note_x + 1, note_str, note_colour))
                         body_i += 1
 
-                    # Then render the head and body if on screen
+                    # Then render the head and tail if on screen
                     if max_tail_y == tail_y:
-                        patches.append((max_tail_y, note_x, "<<->>", 0))
+                        patches.append((max_tail_y, note_x, "<<->>", note_colour))
 
                     if note_y >= 0:
-                        patches.append((note_y, note_x, "<<->>", 0))
+                        patches.append((note_y, note_x, "<<->>", note_colour))
 
             # On-field and still pending scoring or a miss
             elif note_y >= 0 and (
@@ -204,15 +220,10 @@ def build_notes(
                 if first_renderable is None:
                     first_renderable = note_i
 
-                #note_miss = note_judgement is not None
-                # TODO: grey out misses later
-                # Or maybe grey out purely relative to hitline?
-                # Not sure if BOO will be included?
-
-                # For now, just render the head/tail as single rows
-                # TODO: Paint notes
-                note_str = "  X  " if isinstance(note, MineNote) else "[===]"
-                patches.append((note_y, note_x, note_str, 0))
+                if isinstance(note, MineNote):
+                    patches.append((note_y, note_x, "  X  " , colours[4]))
+                else:
+                    patches.append((note_y, note_x, "[===]" , note_colour))
 
             # Do not render successful notes nor those gone past
 
@@ -240,6 +251,7 @@ def render(
     note_columns: list[list[Note]],  # To be cloned raw notes
     xmod: bool = True,  # Swaps between dynamic BPS XMod and CMod
     scroll: float = 1,  # Governs spacing (recommended no less than 1 on terminals)
+    colour_support: bool = False,
     min_tick_rate: float = 1.0/120.0,  # Some terminals are frame capped, so 60-120hz maybe
 ):
     # Handles all stdout writing
@@ -279,15 +291,6 @@ def render(
     # NOTE: CMod results in 8 chars per second at scroll 1, simulating 60BPM
     # Due to the limited resolution of a (vertical) terminal, I would not suggest <8 per full beat
     
-    # TODO: Set up colours
-    # grey for dropped/missed holds
-    # orange for 4ths, blue for 8ths, green for all others (for now)
-    # red and white for hit displays
-    # Consider doing a slight shade for gentle beat flashes
-    # Mines could use red on a small sprite
-
-    # must return colour info?
-
     # For the lack of a threaded curses wrapper, teardown errors manually
     try:
         # Prep terminal
@@ -295,6 +298,57 @@ def render(
         curses.noecho()  # Prevent stdin affecting console
         #stdscr.nodelay(True)  # Non-blocking stdin on getch()  # NOTE: Will only use in ANSI version
         stdscr.keypad(True)  # Consume arrows to prevent weird behaviours
+
+        # Define colour palette
+        # TODO: accept a colour on/off flag in main
+        if colour_support:
+            curses.start_color()  # Inits ANSI colour palette and sets BG to true black
+            # int 0 is reserved for white on black
+            curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_BLACK)
+            curses.init_pair(2, curses.COLOR_RED, curses.COLOR_BLACK)
+            curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
+            curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+            curses.init_pair(5, curses.COLOR_BLUE, curses.COLOR_BLACK)
+            curses.init_pair(6, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+            curses.init_pair(7, curses.COLOR_CYAN, curses.COLOR_BLACK)
+            # NOTE: Assumes the term is configured for bold == bright for full 4-bits
+
+            note_colours = (
+                curses.color_pair(2) | curses.A_BOLD,
+                curses.color_pair(7),
+                curses.color_pair(4),
+                curses.color_pair(3),
+                curses.color_pair(0) | curses.A_BOLD,
+            )
+            judgement_colours = {
+                Judgement.MARVELOUS: curses.color_pair(0) | curses.A_BOLD,
+                Judgement.PERFECT: curses.color_pair(4) | curses.A_BOLD,
+                Judgement.GREAT: curses.color_pair(3) | curses.A_BOLD,
+                Judgement.GOOD: curses.color_pair(3),
+                Judgement.BOO: curses.color_pair(6),
+                Judgement.MISS: curses.color_pair(2),
+                Judgement.OK: curses.color_pair(0),
+                Judgement.NG: curses.color_pair(2),
+            }
+            field_colours = (
+                curses.color_pair(0),
+                curses.color_pair(1) | curses.A_BOLD,
+            )
+            hud_colour = curses.color_pair(0)
+        else:
+            note_colours = (0, 0, 0, 0, 0)
+            judgement_colours = {
+                Judgement.MARVELOUS: 0,
+                Judgement.PERFECT: 0,
+                Judgement.GREAT: 0,
+                Judgement.GOOD: 0,
+                Judgement.BOO: 0,
+                Judgement.MISS: 0,
+                Judgement.OK: 0,
+                Judgement.NG: 0,
+            }
+            field_colours = (0, 0)
+            hud_colour = 0
 
         # TODO: All threads are typically ready in time, though we might want to add a short delay to warn of game start?
         stdscr.addstr(0, 0, "loading")
@@ -343,18 +397,40 @@ def render(
                     hud_offset_x = None
 
                 # Render HUD (fixed y offset)
-                # TODO: Colour?
                 if hud_offset_x is not None:
-                    hud_data = build_hud(judgement_counts, nps, accuracy)
+                    hud_data = build_hud(
+                        judgement_counts,
+                        nps,
+                        accuracy,
+                        hud_colour,
+                        judgement_colours,
+                    )
                     for text_y, text_x, text, text_attr in hud_data:
                         if r > 10 + text_y:
                             stdscr.addnstr(10 + text_y, hud_offset_x + text_x, text, hud_width, text_attr)
                 
                 # Render game underlay
                 if xmod:
-                    field_data = build_field_xmod(len(render_columns), hit_line_y, r-1, spacing, song_beat)
+                    field_data = build_field_xmod(
+                        len(render_columns),
+                        hit_line_y,
+                        r-1,
+                        spacing,
+                        song_beat,
+                        field_colours,
+                    )
                 else:
-                    field_data = build_field_cmod(bps_cursor, bps_lines, len(render_columns), hit_line_y, r-1, spacing, song_beat, song_time)
+                    field_data = build_field_cmod(
+                        bps_cursor,
+                        bps_lines,
+                        len(render_columns),
+                        hit_line_y,
+                        r-1,
+                        spacing,
+                        song_beat,
+                        song_time,
+                        field_colours,
+                    )
                 for text_y, text_x, text, text_attr in field_data:
                     stdscr.addstr(text_y, game_offset_x + text_x, text, text_attr)
 
@@ -367,7 +443,8 @@ def render(
                         lambda note: -round(spacing * (song_beat - note.tail_beat)) + hit_line_y,
                         render_columns,
                         render_cursors,
-                        song_time
+                        song_time,
+                        note_colours,
                     )
                 else:
                     note_data = build_notes(
@@ -376,7 +453,8 @@ def render(
                         lambda note: -round(spacing * (song_time - note.tail_timing)) + hit_line_y,
                         render_columns,
                         render_cursors,
-                        song_time
+                        song_time,
+                        note_colours,
                     )
                 for text_y, text_x, text, text_attr in note_data:
                     stdscr.addstr(text_y, game_offset_x + text_x, text, text_attr)
@@ -384,12 +462,17 @@ def render(
                 # Render overlay (judgement and pause state)
                 # Per tradition, render over game area
                 game_mid = int(game_width // 2) + game_offset_x
-                if r > 10:
+                if r > 10 and last_judgement is not None:
                     text = str(last_judgement)[10:]  # Exploit enum form
-                    stdscr.addstr(10, max(0, game_mid - int(len(text) // 2)), text)
+                    stdscr.addstr(
+                        10,
+                        max(0, game_mid - int(len(text) // 2)),
+                        text,
+                        judgement_colours[last_judgement]
+                    )
 
                 if r > 11 and playback.active and not playback.playing:
-                    stdscr.addstr(11, max(0, game_mid - 3), "PAUSED")
+                    stdscr.addstr(11, max(0, game_mid - 3), "PAUSED", hud_colour)
 
                 stdscr.move(r-1, c-1)
                 stdscr.refresh()
