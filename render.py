@@ -325,8 +325,7 @@ def render(
                 # This simplifies toggling features, transparency, position/constraints, etc
                 # As a side effect, the interface is clearer and uses way less nesting
 
-                # NOTE: Curses subwindows are too janky to be reliable atm, and panels can still curses.error
-                # Hence will handle panels manually
+                # Will handle panels manually, since curses subwindows can be janky and panels can still curses.error
 
                 # Calculate offsets for panel layout
                 if c > game_width + (hud_width * 2):

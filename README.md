@@ -81,7 +81,6 @@ Vim (purely for learning), miniconda+pip, Desmos, Figma, Toggl
 
 ## Backlog (might move to Issues)
 Todo:
-- Centering of game display, loading/results screens, etc
 - Colours
   - Notes should be coloured by their measure fraction and judgement state
   - Measure lines can be made a less intrusive colour
@@ -92,6 +91,7 @@ Todo:
 - Custom format and its parser
   - Should allow true negative BPM as backrolling charts
 - Hitsounds/claps/explosions
+- Loading/results screens (or results file dump)
 - Fade out audio exit for graceful end
 - Live rewind/seek/loop section
 - Live slow/pitch
